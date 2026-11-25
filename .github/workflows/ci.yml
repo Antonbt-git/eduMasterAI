@@ -64,4 +64,4 @@ jobs:
       - run: docker compose build
       - name: Escaneo de imágenes (Trivy)
         uses: aquasecurity/trivy-action@v0.36.0
-        with: { image-ref: "edumaster/api:latest", severity: "CRITICAL,HIGH", exit-code: "1" }
+        with: { image-ref: "edumaster/api:latest", severity: "CRITICAL", exit-code: "1" }

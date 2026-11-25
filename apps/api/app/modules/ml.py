@@ -38,9 +38,16 @@ def ml_get(path: str, **params):
             r = c.get(path, params=params)
     except httpx.HTTPError:
         raise HTTPException(503, "Servicio de inferencia no disponible")
+    try:
+        payload = r.json() if r.content else {}
+    except ValueError:
+        payload = {}
     if r.status_code >= 400:
-        raise HTTPException(r.status_code, r.json().get("detail", "Error del servicio ML"))
-    return r.json()
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        if r.status_code == 429:
+            detail = detail or "El servicio de inferencia está saturado; reintenta en unos segundos."
+        raise HTTPException(r.status_code, detail or "Error del servicio ML")
+    return payload if payload else (r.json() if r.content else {})
 
 
 def ml_post(path: str, json: dict):
@@ -49,9 +56,16 @@ def ml_post(path: str, json: dict):
             r = c.post(path, json=json)
     except httpx.HTTPError:
         raise HTTPException(503, "Servicio de inferencia no disponible")
+    try:
+        payload = r.json() if r.content else {}
+    except ValueError:
+        payload = {}
     if r.status_code >= 400:
-        raise HTTPException(r.status_code, r.json().get("detail", "Error del servicio ML"))
-    return r.json()
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        if r.status_code == 429:
+            detail = detail or "El servicio de inferencia está saturado; reintenta en unos segundos."
+        raise HTTPException(r.status_code, detail or "Error del servicio ML")
+    return payload if payload else (r.json() if r.content else {})
 
 
 def _all_orgs(db: Session) -> list:

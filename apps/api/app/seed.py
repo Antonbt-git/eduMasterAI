@@ -10,7 +10,7 @@ import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, text
 from sqlalchemy.orm import Session
 
 from .core.config import settings
@@ -96,6 +96,11 @@ def _demo_complete(db: Session) -> bool:
 def seed(db: Session) -> None:
     # Mantener objetos cargados entre commits por fases (evita round-trips de recarga).
     db.expire_on_commit = False
+    # En Postgres/Supabase el pooler impone un statement_timeout corto; el seed
+    # es una tarea batch y necesita más margen.
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("SET statement_timeout = 0"))
+        db.commit()
     if _demo_complete(db):
         print("[seed] datos demo ya existen — omitido")
         ensure_rbac(db)

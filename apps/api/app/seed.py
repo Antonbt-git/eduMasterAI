@@ -108,7 +108,7 @@ def seed(db: Session) -> None:
         return
     if db.scalar(select(Organization.id).where(Organization.code == "EMA")):
         print("[seed] datos demo incompletos — reiniciando desde cero")
-        db.execute(delete(Organization).where(Organization.code == "EMA"))
+        db.execute(delete(Organization).where(Organization.code.in_(("EMA", "IAT"))))
         db.commit()
     rnd = random.Random(2026)
     roles = ensure_rbac(db)

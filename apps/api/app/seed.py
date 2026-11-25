@@ -10,7 +10,7 @@ import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import insert, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
 from .core.config import settings
@@ -79,12 +79,32 @@ def mk_user(db, org, roles, email, name, role_codes, title=None, pw=None):
     return u
 
 
+def _demo_complete(db: Session) -> bool:
+    """El demo está completo solo si tiene institución, staff, estudiantes, eventos y matrículas."""
+    org = db.scalar(select(Organization).where(Organization.code == "EMA"))
+    if not org:
+        return False
+    checks = (
+        select(User.id).where(User.organization_id == org.id, User.email == "admin@edumaster.ai"),
+        select(Student.id).where(Student.organization_id == org.id),
+        select(LearningEvent.event_id).where(LearningEvent.organization_id == org.id),
+        select(Enrollment.id).where(Enrollment.organization_id == org.id),
+    )
+    return all(db.scalar(q.limit(1)) is not None for q in checks)
+
+
 def seed(db: Session) -> None:
-    if db.scalar(select(Organization.id).where(Organization.code == "EMA")):
+    # Mantener objetos cargados entre commits por fases (evita round-trips de recarga).
+    db.expire_on_commit = False
+    if _demo_complete(db):
         print("[seed] datos demo ya existen — omitido")
         ensure_rbac(db)
         db.commit()
         return
+    if db.scalar(select(Organization.id).where(Organization.code == "EMA")):
+        print("[seed] datos demo incompletos — reiniciando desde cero")
+        db.execute(delete(Organization).where(Organization.code == "EMA"))
+        db.commit()
     rnd = random.Random(2026)
     roles = ensure_rbac(db)
     now = datetime.now(timezone.utc)
@@ -172,14 +192,16 @@ def seed(db: Session) -> None:
         if email in used:
             continue
         used.add(email)
-        u = User(organization_id=org.id, email=email, full_name=f"{f} {l}", password_hash=pw, roles=[roles["student"]], avatar_url=avatar(email.split("@")[0]),
-                 title="Estudiante")
+        uid = uuid.uuid4()
+        u = User(id=uid, organization_id=org.id, email=email, full_name=f"{f} {l}", password_hash=pw, roles=[roles["student"]],
+                 avatar_url=avatar(email.split("@")[0]), title="Estudiante")
         db.add(u)
-        db.flush()
-        st = Student(user_id=u.id, organization_id=org.id, external_code=f"ST-{n:04d}", region=rnd.choices(REGIONS, REGION_P)[0])
+        st = Student(id=uuid.uuid4(), user_id=uid, organization_id=org.id, external_code=f"ST-{n:04d}",
+                     region=rnd.choices(REGIONS, REGION_P)[0])
         db.add(st)
         students.append(st)
     db.flush()
+    db.commit()  # fase 1: estructura académica persistida (libera locks)
 
     # --------------------------------------------------------- matrículas + eventos + intentos
     events, attempts, evidence, enrollments = [], [], [], []
@@ -241,6 +263,7 @@ def seed(db: Session) -> None:
             e.update(status="completed", progress=1.0, completed_at=now - timedelta(hours=2))
     for chunk in range(0, len(events), 5000):
         db.execute(insert(LearningEvent), events[chunk:chunk + 5000])
+        db.commit()  # fase 2: commits por lote de eventos (progreso persistente)
     db.execute(insert(Enrollment), enrollments)
     if attempts:
         db.execute(insert(AssessmentAttempt), attempts)
@@ -250,6 +273,7 @@ def seed(db: Session) -> None:
     db.execute(insert(SkillEvidence), [dict(id=uuid.uuid4(), student_id=ev["student_id"], skill_id=ev["skill_id"], source_type="instructor",
                                             score=ev["score"], level=ev["level"], observed_at=ev["observed_at"], validated_by=staff["instructor"].id)
                                        for ev in evidence[::7]])
+    db.commit()
 
     # --------------------------------------------------------- agregados diarios
     region_of = {s.id: s.region for s in students}
@@ -268,6 +292,7 @@ def seed(db: Session) -> None:
     db.execute(insert(DailyMetric), [dict(organization_id=org.id, day=k[0], course_id=k[1], region=k[2], events=v["events"], learning_seconds=v["secs"],
                                           active_students=len(v["students"]), assessments=v["assess"], completions=v["comp"], computed_at=now)
                                      for k, v in agg.items()])
+    db.commit()  # fase 3: agregados diarios
 
     # --------------------------------------------------------- certificados
     seq = 0

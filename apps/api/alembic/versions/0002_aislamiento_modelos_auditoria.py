@@ -24,7 +24,7 @@ def upgrade() -> None:
     for table in TABLES:
         with op.batch_alter_table(table) as b:
             b.add_column(sa.Column("organization_id", sa.Uuid(), nullable=True))
-            b.create_foreign_key(f"fk_{table}_organization_id_organizations", "organizations", ["organization_id"], ["id"])
+            b.create_foreign_key(f"fk_{table}_organization_id_organizations", "organizations", ["organization_id"], ["id"], ondelete="CASCADE")
             b.create_index(f"ix_{table}_organization_id", ["organization_id"])
 
     if op.get_bind().dialect.name == "postgresql":

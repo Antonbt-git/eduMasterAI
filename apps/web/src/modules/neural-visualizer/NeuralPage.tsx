@@ -16,7 +16,7 @@ type Net = { key: string; title: string; description: string; task: string; prim
 const STATE_TONE: Record<string, string> = { entrenando: "violet", validando: "violet", "cargando datos": "cyan", publicado: "teal", detenido: "muted", error: "danger" };
 
 export function NeuralPage() {
-  const nets = useQuery({ queryKey: ["ml", "networks"], queryFn: () => api<Net[]>("/ml/networks"), refetchInterval: 20000 });
+  const nets = useQuery({ queryKey: ["ml", "networks"], queryFn: () => api<Net[]>("/ml/networks"), staleTime: 60000 });
   const [sel, setSel] = useState("edumaster_mtl");
   const net = nets.data?.find((n) => n.key === sel);
   return (
@@ -26,17 +26,19 @@ export function NeuralPage() {
         subtitle="Cinco redes PyTorch entrenadas, versionadas y servidas en producción. La topología, los pesos y las activaciones vienen del modelo real; las sinapsis se encienden cuando llega una inferencia o una época de entrenamiento."
         actions={<DemoBadge title="Modelos entrenados con el dataset sintético DEMO" />}
       />
+      {nets.isError && <div className="mb-4 text-[13px] text-danger">No se pudieron cargar las redes: {String((nets.error as any)?.message ?? nets.error)}</div>}
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {nets.isLoading && Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-40" />)}
         {nets.data?.map((n) => <NetCard key={n.key} n={n} active={n.key === sel} onClick={() => setSel(n.key)} />)}
       </div>
+      {!nets.isLoading && !nets.isError && (!nets.data || nets.data.length === 0) && <div className="mb-4 text-[13px] text-mist">No hay redes registradas todavía.</div>}
       {net && <NetworkWorkbench key={net.key} net={net} />}
     </div>
   );
 }
 
 function NetCard({ n, active, onClick }: { n: Net; active: boolean; onClick: () => void }) {
-  const g = useQuery({ queryKey: ["ml", "graph", n.key, "mini"], queryFn: () => api<Graph>(`/ml/networks/${n.key}/graph?weights=false`), staleTime: 60000 });
+  const g = useQuery({ queryKey: ["ml", "graph", n.key, "mini"], queryFn: () => api<Graph>(`/ml/networks/${n.key}/graph?weights=false`), staleTime: 300000 });
   const live = useNetworkLive(n.key, { runId: n.last_run?.id, status: n.last_run?.status });
   return (
     <button onClick={onClick} aria-pressed={active}
@@ -61,7 +63,7 @@ function NetworkWorkbench({ net }: { net: Net }) {
   const qc = useQueryClient();
   const toast = useUI((s) => s.toast);
   const [version, setVersion] = useState<string | undefined>(undefined);
-  const graph = useQuery({ queryKey: ["ml", "graph", net.key, version], queryFn: () => api<Graph & any>(`/ml/networks/${net.key}/graph${version ? `?version=${version}` : ""}`) });
+  const graph = useQuery({ queryKey: ["ml", "graph", net.key, version], queryFn: () => api<Graph & any>(`/ml/networks/${net.key}/graph${version ? `?version=${version}` : ""}`), staleTime: 300000 });
   const examples = useQuery({ queryKey: ["ml", "examples"], queryFn: () => api<any>("/ml/examples?n=8"), staleTime: Infinity });
   const live = useNetworkLive(net.key, { runId: net.last_run?.id, status: net.last_run?.status, history: net.last_run?.history });
   const [demo, setDemo] = useState(false);

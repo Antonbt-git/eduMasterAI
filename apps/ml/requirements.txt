@@ -1,0 +1,11 @@
+# Versiones verificadas. torch se instala desde el índice CPU en el Dockerfile.
+numpy==2.5.3
+pandas==3.0.5
+scikit-learn==1.9.1
+PyYAML==6.0.3
+fastapi==0.163.2
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+rq==3.0.0
+redis==8.1.0
+pydantic==2.13.5

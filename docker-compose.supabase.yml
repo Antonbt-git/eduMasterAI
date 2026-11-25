@@ -1,0 +1,10 @@
+# Override para usar Supabase como PostgreSQL gestionado (sin contenedor postgres local).
+#   docker compose -f docker-compose.yml -f docker-compose.supabase.yml up -d --build
+services:
+  postgres:
+    profiles: [disabled]
+  api:
+    environment:
+      DATABASE_URL: ${SUPABASE_DATABASE_URL:?defina SUPABASE_DATABASE_URL en .env}
+    depends_on:
+      redis: { condition: service_healthy }

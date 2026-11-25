@@ -1,0 +1,81 @@
+# Blueprint de Render — EduMaster.ai (API + ML/worker + Key Value).
+# Base de datos: Supabase. Frontend: Vercel. Guía: docs/DEPLOY_VERCEL_SUPABASE_RENDER.md
+services:
+  - type: keyvalue
+    name: edumaster-nebula-redis
+    plan: free
+    maxmemoryPolicy: noeviction
+    ipAllowList: []            # solo red privada de Render
+
+  - type: web
+    name: edumaster-nebula-api
+    runtime: docker
+    dockerContext: ./apps/api
+    dockerfilePath: ./apps/api/Dockerfile
+    plan: free                 # recomendado 0.5c-512mb o superior para no dormir (SSE y simulador)
+    healthCheckPath: /health/live
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false            # Supabase Session Pooler (puerto 5432), driver postgresql+psycopg
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: edumaster-nebula-redis, property: connectionString }
+      - key: ML_SERVICE_URL
+        fromService: { type: web, name: edumaster-nebula-ml, property: hostport }
+      - key: JWT_SECRET
+        sync: false
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false
+      - key: PUBLIC_WEB_URL
+        sync: false            # https://<tu-proyecto>.vercel.app
+      - key: CORS_ORIGINS
+        sync: false            # mismo dominio de Vercel
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SEED_DEMO_DATA
+        value: "true"
+      - key: DEMO_SIMULATOR
+        value: "true"
+      - key: BOOTSTRAP_TRAINING
+        value: "true"
+      - key: DEMO_PASSWORD
+        sync: false
+      - key: AI_TUTOR_PROVIDER
+        value: none
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+  - type: web
+    name: edumaster-nebula-ml
+    runtime: docker
+    dockerContext: ./apps/ml
+    dockerfilePath: ./apps/ml/Dockerfile
+    dockerCommand: ./start-combined.sh
+    plan: 1c-2g                # PyTorch + entrenamiento: 2 GB recomendados; el disco requiere plan de pago
+    healthCheckPath: /health
+    disk:
+      name: ml-artifacts
+      mountPath: /artifacts
+      sizeGB: 5
+    envVars:
+      - key: PORT
+        value: "8001"
+      - key: ML_ARTIFACT_DIR
+        value: /artifacts
+      - key: ML_DATA_DIR
+        value: /artifacts/data
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: edumaster-nebula-redis, property: connectionString }
+      - key: API_INTERNAL_URL
+        fromService: { type: web, name: edumaster-nebula-api, property: hostport }
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false

@@ -1,0 +1,12 @@
+[project]
+name = "edumaster-ml"
+version = "1.0.0"
+description = "EduMaster.ai — dataset DEMO, 5 redes neuronales PyTorch, entrenamiento, evaluación e inferencia"
+requires-python = ">=3.12"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

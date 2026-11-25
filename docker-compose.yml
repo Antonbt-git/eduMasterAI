@@ -1,0 +1,117 @@
+# EduMaster.ai — stack completo
+#   docker compose up -d --build                      → web, api, worker, ml, postgres, redis
+#   docker compose --profile mlops up -d              → + MLflow
+#   docker compose --profile monitoring up -d         → + Prometheus y Grafana
+#   docker compose --profile storage up -d            → + MinIO (object storage S3)
+# Supabase: docker compose -f docker-compose.yml -f docker-compose.supabase.yml up -d --build
+
+x-ml-env: &ml-env
+  ML_DATA_DIR: /data
+  ML_ARTIFACT_DIR: /artifacts
+  API_INTERNAL_URL: http://api:8000
+  INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?defina INTERNAL_SERVICE_TOKEN en .env}
+  REDIS_URL: redis://redis:6379/0
+  MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-}
+  GIT_COMMIT: ${GIT_COMMIT:-local}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-edumaster}
+      POSTGRES_USER: ${POSTGRES_USER:-edumaster}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD en .env}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-edumaster} -d ${POSTGRES_DB:-edumaster}"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  api:
+    build: ./apps/api
+    image: edumaster/api:${TAG:-latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-edumaster}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-edumaster}}
+      REDIS_URL: redis://redis:6379/0
+      ML_SERVICE_URL: http://ml:8001
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["${API_PORT:-8000}:8000"]
+
+  ml:
+    build: ./apps/ml
+    image: edumaster/ml:${TAG:-latest}
+    restart: unless-stopped
+    environment: *ml-env
+    volumes: [mldata:/data, mlartifacts:/artifacts]
+
+  worker:
+    build: ./apps/ml
+    image: edumaster/ml:${TAG:-latest}
+    restart: unless-stopped
+    command: ["rq", "worker", "training", "--url", "redis://redis:6379/0", "--with-scheduler"]
+    environment: *ml-env
+    volumes: [mldata:/data, mlartifacts:/artifacts]
+    depends_on:
+      redis: { condition: service_healthy }
+      ml: { condition: service_started }
+
+  web:
+    build: ./apps/web
+    image: edumaster/web:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [api]
+    ports: ["${WEB_PORT:-8080}:8080"]
+
+  mlflow:
+    profiles: [mlops]
+    image: ghcr.io/mlflow/mlflow:v2.17.2
+    command: ["mlflow", "server", "--host", "0.0.0.0", "--port", "5000", "--backend-store-uri", "sqlite:////mlflow/mlflow.db", "--default-artifact-root", "/mlflow/artifacts"]
+    volumes: [mlflowdata:/mlflow]
+    ports: ["5000:5000"]
+
+  minio:
+    profiles: [storage]
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-edumaster}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-minio}
+    volumes: [miniodata:/data]
+    ports: ["9000:9000", "9001:9001"]
+
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v2.55.1
+    volumes: [./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    ports: ["9090:9090"]
+
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-change-me-grafana}
+    volumes: [./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro]
+    ports: ["3000:3000"]
+
+volumes:
+  pgdata:
+  redisdata:
+  mldata:
+  mlartifacts:
+  mlflowdata:
+  miniodata:

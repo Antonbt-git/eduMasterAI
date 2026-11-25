@@ -1,0 +1,12 @@
+# Pipeline reproducible DVC (dataset → entrenamiento de las 5 redes)
+stages:
+  dataset:
+    cmd: python -m edumaster_ml.datasets.pipeline demo-v1
+    deps: [src/edumaster_ml/datasets]
+    outs: [data/datasets/demo-v1]
+  train:
+    foreach: [edumaster_mtl, completion_mlp, mastery_ordinal, risk_transformer, reco_ranker]
+    do:
+      cmd: python -m edumaster_ml.training.train --network ${item} --config configs/${item}.yaml
+      deps: [data/datasets/demo-v1, src/edumaster_ml/models, src/edumaster_ml/training, configs/${item}.yaml]
+      outs: [artifacts/${item}]

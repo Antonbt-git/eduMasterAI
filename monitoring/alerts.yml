@@ -1,0 +1,15 @@
+groups:
+  - name: edumaster
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels: { severity: critical }
+      - alert: ModelDrift
+        expr: edumaster_model_max_psi > 0.25
+        for: 10m
+        labels: { severity: warning }
+      - alert: BackupMissing
+        expr: time() - edumaster_last_backup_timestamp > 86400
+        for: 1h
+        labels: { severity: critical }

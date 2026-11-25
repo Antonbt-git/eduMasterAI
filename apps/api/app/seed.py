@@ -266,9 +266,7 @@ def seed(db: Session) -> None:
     for e in enrollments:
         if e["student_id"] == main.id and e["course_id"] == next(c.id for c in courses if c.code == "PY-101"):
             e.update(status="completed", progress=1.0, completed_at=now - timedelta(hours=2))
-    for chunk in range(0, len(events), 5000):
-        db.execute(insert(LearningEvent), events[chunk:chunk + 5000])
-        db.commit()  # fase 2: commits por lote de eventos (progreso persistente)
+    # Fase 2: matrículas/intentos/evidencias primero (la UI ya muestra progreso).
     db.execute(insert(Enrollment), enrollments)
     if attempts:
         db.execute(insert(AssessmentAttempt), attempts)
@@ -369,6 +367,10 @@ def seed(db: Session) -> None:
 
     audit(db, None, "system.seeded", "organization", org.id, {"label": "DEMO", "students": len(students), "events": len(events)}, org_id=org.id, actor_email="system@seed")
     db.commit()
+    # Fase final: eventos en lotes (puede tardar; el resto de la UI ya está listo).
+    for chunk in range(0, len(events), 5000):
+        db.execute(insert(LearningEvent), events[chunk:chunk + 5000])
+        db.commit()
     print(f"[seed] DEMO creado: {len(students)} estudiantes, {len(events)} eventos, {len(attempts)} intentos, {len(enrollments)} matrículas")
 
 

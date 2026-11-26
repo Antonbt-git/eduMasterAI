@@ -152,6 +152,24 @@ def _state(last: ModelRun | None, prod: ModelVersion | None) -> str:
     return "publicado" if prod else "detenido"
 
 
+@router.get("/ml/networks/topologies")
+def topologies(p: Principal = Depends(require("ml:read")), db: Session = Depends(get_db)):
+    """Topologías ligeras (sin pesos) de todas las redes en una sola petición.
+
+    Evita la ráfaga de N llamadas que dispara el visualizador y que los proxies
+    con rate limit (p. ej. Render) rechazan con 429.
+    """
+    out: dict[str, dict | None] = {}
+    for k in NETWORK_KEYS:
+        try:
+            prod = production(db, k)
+            v = prod.version if prod else None
+            out[k] = ml_get(f"/networks/{k}/graph", **({"version": v} if v else {}), weights=False)
+        except HTTPException:
+            out[k] = None
+    return out
+
+
 @router.get("/ml/networks/{key}/graph")
 def graph(key: str, version: str | None = None, weights: bool = True, p: Principal = Depends(require("ml:read")), db: Session = Depends(get_db)):
     if key not in NETWORK_KEYS:

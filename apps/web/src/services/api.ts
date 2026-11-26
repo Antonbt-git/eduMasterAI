@@ -30,11 +30,17 @@ export async function api<T = any>(path: string, opts: Opts = {}, retry = true):
   const headers: Record<string, string> = { ...(opts.headers ?? {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await fetch(`${API_BASE}${path}`, {
+  const doFetch = () => fetch(`${API_BASE}${path}`, {
     method: opts.method ?? (opts.body !== undefined || opts.form ? "POST" : "GET"),
     headers,
     body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
   });
+  let res = await doFetch();
+  // Reintentos con backoff ante saturación del proxy (429) o servicio temporalmente no disponible (503).
+  for (let attempt = 0; attempt < 3 && (res.status === 429 || res.status === 503); attempt++) {
+    await new Promise((r) => setTimeout(r, 400 * 2 ** attempt + Math.random() * 300));
+    res = await doFetch();
+  }
   if (res.status === 401 && retry && token) {
     refreshing ??= refresh().finally(() => (refreshing = null));
     if (await refreshing) return api<T>(path, opts, false);

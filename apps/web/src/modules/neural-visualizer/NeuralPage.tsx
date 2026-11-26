@@ -17,6 +17,8 @@ const STATE_TONE: Record<string, string> = { entrenando: "violet", validando: "v
 
 export function NeuralPage() {
   const nets = useQuery({ queryKey: ["ml", "networks"], queryFn: () => api<Net[]>("/ml/networks"), staleTime: 60000 });
+  // Una sola petición para las 5 miniaturas (evita la ráfaga de grafos concurrentes).
+  const topo = useQuery({ queryKey: ["ml", "topologies"], queryFn: () => api<Record<string, Graph | null>>("/ml/networks/topologies"), staleTime: 300000 });
   const [sel, setSel] = useState("edumaster_mtl");
   const net = nets.data?.find((n) => n.key === sel);
   return (
@@ -29,7 +31,7 @@ export function NeuralPage() {
       {nets.isError && <div className="mb-4 text-[13px] text-danger">No se pudieron cargar las redes: {String((nets.error as any)?.message ?? nets.error)}</div>}
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {nets.isLoading && Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-40" />)}
-        {nets.data?.map((n) => <NetCard key={n.key} n={n} active={n.key === sel} onClick={() => setSel(n.key)} />)}
+        {nets.data?.map((n) => <NetCard key={n.key} n={n} graph={topo.data?.[n.key] ?? null} active={n.key === sel} onClick={() => setSel(n.key)} />)}
       </div>
       {!nets.isLoading && !nets.isError && (!nets.data || nets.data.length === 0) && <div className="mb-4 text-[13px] text-mist">No hay redes registradas todavía.</div>}
       {net && <NetworkWorkbench key={net.key} net={net} />}
@@ -37,8 +39,7 @@ export function NeuralPage() {
   );
 }
 
-function NetCard({ n, active, onClick }: { n: Net; active: boolean; onClick: () => void }) {
-  const g = useQuery({ queryKey: ["ml", "graph", n.key, "mini"], queryFn: () => api<Graph>(`/ml/networks/${n.key}/graph?weights=false`), staleTime: 300000 });
+function NetCard({ n, graph, active, onClick }: { n: Net; graph: Graph | null; active: boolean; onClick: () => void }) {
   const live = useNetworkLive(n.key, { runId: n.last_run?.id, status: n.last_run?.status });
   return (
     <button onClick={onClick} aria-pressed={active}
@@ -48,7 +49,7 @@ function NetCard({ n, active, onClick }: { n: Net; active: boolean; onClick: () 
         <Badge tone={live.training ? "violet" : STATE_TONE[n.state]} className="ml-auto">{live.training ? "entrenando" : n.state}</Badge>
       </div>
       <div className="grid-bg mt-2 h-20 overflow-hidden rounded-lg">
-        {g.data && <NeuralNetworkCanvas graph={g.data} compact height={80} mode={vizMode(live, false, !!live.activations)} activations={live.activations}
+        {graph && <NeuralNetworkCanvas graph={graph} compact height={80} mode={vizMode(live, false, !!live.activations)} activations={live.activations}
           pulseKey={live.pulseKey} backKey={live.backKey} gradNorms={live.gradNorms} />}
       </div>
       <div className="mt-2 flex items-center justify-between text-[12px] text-mist">
